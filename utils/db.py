@@ -18,7 +18,7 @@ async def setup_dbs(path: Path = config.DB_PATH) -> bool:
                 await cursor.execute(
                     "CREATE TABLE IF NOT EXISTS settings(setting_name TEXT, setting TEXT, guild INTEGER)"
                 )
-                await cursor.execute("CREATE TABLE IF NOT EXISTS permissions(kind TEXT, id INTEGER, guild, INTEGER)")
+                await cursor.execute("CREATE TABLE IF NOT EXISTS permissions(kind TEXT, id INTEGER, guild INTEGER)")
             await db.commit()
             log.info("DB's set up successfully")
         return True
@@ -26,10 +26,9 @@ async def setup_dbs(path: Path = config.DB_PATH) -> bool:
         log.error("Error whilst setting up databases", exc_info=e)
 
 
-async def insert_settings(
-    setting_name: str, setting: Any, guild: int, path: Path | str = config.DB_PATH
-) -> Any:
+async def insert_settings(setting_name: str, setting: Any, guild: int, path: Path | str = config.DB_PATH) -> Any:
     try:
+        setting_name = setting_name.lower()
         async with aiosqlite.connect(path) as db:
             async with db.cursor() as cursor:
                 await cursor.execute(
@@ -52,6 +51,13 @@ async def insert_settings(
                     return old_setting
     except Exception as e:
         log.error("Error whilst inserting setting", exc_info=e)
-        return discord.Embed(
-            title="Error", description="Uhhm yea this shouldn't happen", color=discord.Color.brand_red()
-        )
+
+
+async def get_setting(setting_name: str, guild_id: int, path: Path = config.DB_PATH) -> int:
+    async with aiosqlite.connect(path) as db:
+        async with db.cursor() as cursor:
+            await cursor.execute(
+                "SELECT setting FROM settings WHERE guild = ? AND setting_name = ?", (guild_id, setting_name)
+            )
+            setting = await cursor.fetchone()
+    return setting

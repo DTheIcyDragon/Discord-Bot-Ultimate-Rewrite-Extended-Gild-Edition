@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import datetime
 
 import discord
 from discord.ext import commands
@@ -12,6 +13,27 @@ from utils import utility
 log = logging.getLogger("mainLog")
 
 
+async def add_queue(song: wavelink.abc.Playable, vc: wavelink.Player):
+    if vc.is_playing():
+        print("choose here")
+        await vc.queue.put_wait(song)
+    else:
+        print("not here")
+        await vc.play(song)
+
+
+class MusicView(discord.ui.View):
+    def __init__(self, context: commands.Context, songs: list[wavelink.abc.Playable]):
+        super().__init__(timeout=300, disable_on_timeout=True)
+
+    @discord.ui.button(label="Select First", style=discord.ButtonStyle.blurple, emoji="1️⃣")
+    async def select_first(self, button: discord.Button, interaction: discord.Interaction):
+        button.disabled = True
+        button.style = discord.ButtonStyle.green
+        await self.message.edit(view=self)
+        return await interaction.response.send_message("First Button")
+
+
 class Music(commands.Cog):
     def __init__(self, client: commands.Bot):
         self.client = client
@@ -19,7 +41,20 @@ class Music(commands.Cog):
 
     music = discord.SlashCommandGroup("music", "music commands", config.GUILDS)
 
-    @music.command()
+    @commands.Cog.listener("on_wavelink_track_end")
+    async def on_track_end(self, player: wavelink.Player, track: wavelink.Track, reason):
+        now = datetime.datetime.now()
+        print(track)
+        print(player.queue)
+        print(reason)
+        print(f"{now.hour}:{now.minute}:{now.second}")
+        next_track = player.queue.get()
+        if isinstance(next_track, wavelink.QueueEmpty):
+            player.cleanup()
+            await player.stop()
+        await player.play(next_track, replace=False)
+
+    @music.command(name="play", description="plays music with a given search")
     async def play(
         self,
         ctx: discord.ApplicationContext,
@@ -50,16 +85,15 @@ class Music(commands.Cog):
         if ctx.author.voice.channel.id != vc.channel.id:  # check if the bot is not in the voice channel
             return await ctx.response.send_message("You must be in the same voice channel as the bot.")
 
-        await vc.self_deaf()
+        client = ctx.guild.get_member(self.client.user.id)
+        await client.edit(deafen=True)
 
         songs = await wavelink.YouTubeTrack.search(query=search, return_first=False)
         tracks = []
-        key = 0
 
         for song in songs:
             tracks.append(song)
-            key += 1
-            if key >= 5:
+            if len(tracks) >= 5:
                 break
         music_selection = discord.Embed(
             title="Select your title",
@@ -71,7 +105,7 @@ class Music(commands.Cog):
         music_selection.set_author(name="Query Results")
 
         try:
-            msg = await ctx.channel.send(embed=music_selection)
+            msg = await ctx.channel.send(embed=music_selection, view=MusicView())
             await msg.add_reaction("1️⃣")
             await msg.add_reaction("2️⃣")
             await msg.add_reaction("3️⃣")
@@ -92,20 +126,25 @@ class Music(commands.Cog):
                 case _:
                     track = 0
             song = await wavelink.YouTubeTrack.search(tracks[track].uri, return_first=True)
-            await msg.delete(delay=3, reason="Song chosen")
+            if vc.is_playing():
+                print("choose here")
+                await vc.queue.put_wait(song)
+            else:
+                print("not here")
+                await vc.play(song)
+            print(vc.queue)
+            await msg.delete(delay=2.5, reason="Song chosen")
         except asyncio.TimeoutError:
             return await ctx.response.send_message(
                 embed=discord.Embed(title="Search cancelled timed out", color=discord.Color.brand_red())
             )
 
-        await vc.set_volume(config.VOLUME)
-        await vc.play(song)
         em = discord.Embed(
             title=f"Now playing {song.title}",
             url=song.uri,
             description=f"""
 By: {song.author}
-Duration: {utility.sec_to_min(song.duration)}
+Duration: {utility.sec_to_min(song.length)}
 """,
             color=discord.Color.blurple(),
         )
@@ -139,6 +178,47 @@ Duration: {utility.sec_to_min(song.duration)}
             return await ctx.response.send_message("You must be in the same voice channel as the bot.")
 
         await vc.set_volume(volume)
+
+    @music.command(name="pause", description="pauses the music backplay")
+    async def pause(self, ctx: discord.ApplicationContext):
+        vc = ctx.guild.voice_client
+        if not vc:  # check if the bot is not in a voice channel
+            vc = await ctx.author.voice.channel.connect(cls=wavelink.Player)  # connect to the voice channel
+
+        if ctx.author.voice.channel.id != vc.channel.id:  # check if the bot is not in the voice channel
+            return await ctx.response.send_message("You must be in the same voice channel as the bot.")
+
+        if vc.is_paused():
+            return await ctx.response.send_message("The bot is already paused.")
+        await vc.pause()
+        return await ctx.response.send_message("Music playback paused.")
+
+    @music.command(name="resume", description="resumes the music backplay")
+    async def resume(self, ctx: discord.ApplicationContext):
+        vc = ctx.guild.voice_client
+        if not vc:  # check if the bot is not in a voice channel
+            vc = await ctx.author.voice.channel.connect(cls=wavelink.Player)  # connect to the voice channel
+
+        if ctx.author.voice.channel.id != vc.channel.id:  # check if the bot is not in the voice channel
+            return await ctx.response.send_message("You must be in the same voice channel as the bot.")
+
+        if not vc.is_paused():
+            return await ctx.response.send_message("The bot is already playing.")
+        await vc.resume()
+        return await ctx.response.send_message("Music playback resumed.")
+
+    @music.command(name="queue", description="queue shows the upcoming 5 songs from the queue")
+    async def queue(self, ctx: discord.ApplicationContext):
+        vc = ctx.guild.voice_client
+        if not vc:  # check if the bot is not in a voice channel
+            vc = await ctx.author.voice.channel.connect(cls=wavelink.Player)  # connect to the voice channel
+
+        if ctx.author.voice.channel.id != vc.channel.id:  # check if the bot is not in the voice channel
+            return await ctx.response.send_message("You must be in the same voice channel as the bot.")
+
+        songs = vc.queue
+        print(songs)
+        await ctx.response.send_message(embed=discord.Embed(description="returned smth"))
 
 
 def setup(bot):

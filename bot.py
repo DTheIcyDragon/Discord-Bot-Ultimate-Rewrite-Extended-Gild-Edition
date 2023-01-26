@@ -7,6 +7,7 @@ import platform
 import discord
 import wavelink
 from discord.ext import commands
+from wavelink.ext import spotify
 
 import config
 from utils import db
@@ -33,7 +34,7 @@ log = logging.getLogger("mainLog")
 log.setLevel(logging.DEBUG)
 if not Path("logs").exists():
     os.mkdir("logs")
-if len(os.listdir("logs")) > 10:
+if len(os.listdir("logs")) >= 7:
     for file in os.listdir("logs"):
         os.remove("logs/" + file)
         break
@@ -82,7 +83,13 @@ class AnyClient(commands.Bot):
         if not self.nodes_connected:
             """Connect to our Lavalink nodes."""
             await self.wait_until_ready()
-            await wavelink.NodePool.create_node(bot=self, host="127.0.0.1", port=2333, password="youshallnotpass")
+            await wavelink.NodePool.create_node(
+                bot=self,
+                host="127.0.0.1",
+                port=2333,
+                password="youshallnotpass",
+                spotify_client=spotify.SpotifyClient(client_id=config.SPOTIFY_ID, client_secret=config.SPOTIFY_SECRET),
+            )
             self.nodes_connected = True
             log.info("Connected to Lavalink")
 
@@ -99,5 +106,5 @@ client = AnyClient(
 
 
 if __name__ == "__main__":
-    client.load_extensions("cogs.music", "cogs.settings")
+    client.load_extensions("cogs.music v2", "cogs.settings")
     client.run(config.TOKEN)
