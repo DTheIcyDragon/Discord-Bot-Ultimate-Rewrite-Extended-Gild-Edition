@@ -33,7 +33,7 @@ log = logging.getLogger("mainLog")
 log.setLevel(logging.DEBUG)
 if not Path("logs").exists():
     os.mkdir("logs")
-if len(os.listdir("logs")) > 10:
+if len(os.listdir("logs")) >= 7:
     for file in os.listdir("logs"):
         os.remove("logs/" + file)
         break

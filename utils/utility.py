@@ -5,4 +5,3 @@ def sec_to_min(time: float):
     if not hours:
         return f"{minutes}m {seconds}s"
     return f"{hours}h {minutes}m {seconds}s"
-
